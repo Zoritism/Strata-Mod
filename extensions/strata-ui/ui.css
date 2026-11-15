@@ -1,0 +1,48 @@
+/* Application chrome uses Strata's palette. Numbers and bar lengths remain
+   readable without relying on colour, including high-contrast/phone layouts. */
+.sx-system-strip{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;min-width:0;max-width:100%;grid-column:1/-1;flex-basis:100%;box-sizing:border-box;padding:5px 0;font-variant-numeric:tabular-nums;color:var(--st-ink-muted)}
+.sx-system-meter{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:6px;row-gap:4px;min-width:68px;flex:0 1 100px;padding:3px 0;font-size:11px;line-height:1.2;--meter-colour:var(--st-accent,#8994a7)}
+.sx-system-meter[data-family=memory]{--meter-colour:var(--st-ink-muted,#8994a7)}
+.sx-system-meter[data-level=elevated]{--meter-colour:var(--st-warning,#bd9143)}
+.sx-system-meter[data-level=high]{--meter-colour:var(--st-danger,#d97769)}
+.sx-system-meter[data-level=unknown]{opacity:.6}
+.sx-system-meter:focus-visible{outline:2px solid var(--st-accent);outline-offset:3px;border-radius:2px}
+.sx-system-label,.sx-system-value{white-space:nowrap}
+.sx-system-value{color:var(--st-ink)}
+.sx-system-bar{display:block;grid-column:1/-1;height:4px;width:100%;border-radius:4px;background:var(--st-line,#555);overflow:hidden}
+.sx-system-fill{display:block;height:100%;width:0;background:var(--meter-colour);transition:width .2s linear}
+.main__head:has(>.sx-system-strip){flex-wrap:wrap;height:auto}
+.chat-toolbar:has(>.sx-system-strip){height:auto;grid-template-rows:minmax(44px,auto) auto}
+.chat-toolbar>.sx-system-strip{padding:3px 20px 6px}
+.sx-remote-access{min-width:0;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere}
+.sx-remote-access input{min-width:0;max-width:100%;box-sizing:border-box}
+.sx-files-collapsible:not(.sx-files-open)>:not(.sx-files-disclosure){display:none!important}
+.sx-files-disclosure{width:100%;text-align:left;color:var(--st-ink-muted);background:transparent;border:1px solid var(--st-line);border-radius:var(--st-r-md,8px)}
+.sx-files-disclosure::before{content:'▸';display:inline-block;margin-right:8px}
+.sx-files-open>.sx-files-disclosure::before{content:'▾'}
+@media(prefers-reduced-motion:reduce){.sx-system-fill{transition:none}}
+
+/* Shared navigation is contained by its own row; media-specific controls are
+   still styled by the media feature, never by assumptions about its buttons. */
+@media(max-width:700px){
+ .sx-system-strip{gap:5px 10px}
+ .sx-system-meter{flex:1 1 60px;min-width:54px;font-size:10px;max-width:100px}
+ .chat-toolbar>.sx-system-strip{padding-inline:12px}
+ .chat-toolbar{grid-template-columns:minmax(0,1fr)!important;min-width:0}
+ .chat-toolbar__conversation,.chat-toolbar__previews{min-width:0;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}
+ .chat-toolbar__conversation>h1{min-width:5rem;max-width:40vw}
+ .chat-toolbar__conversation>button,.chat-toolbar__conversation>[role=combobox]{flex-shrink:0}
+ .section-toolbar,.st-header.main__head{flex-wrap:wrap;gap:8px;min-width:0}
+ .sx-row{flex-wrap:wrap;min-width:0}
+ .st-composer__bar{flex-wrap:wrap;gap:6px;min-width:0}
+ .st-composer__bar>button{flex-shrink:0}
+ .sx-panel input,.sx-panel select,.sx-panel textarea{max-width:100%;box-sizing:border-box}
+ .main__head:has(.task-header-actions),.main__head:has(.tasks-actions){height:auto;max-width:100%;box-sizing:border-box;align-items:flex-start}
+ .main__head:has(.task-header-actions) .main__titles{display:none}
+ .main__head:has(.task-header-actions) .main__actions,.main__head:has(.tasks-actions) .main__actions{width:100%;max-width:100%;min-width:0;flex:1 1 100%}
+ .task-header-actions,.tasks-actions{width:100%;min-width:0;max-width:100%;display:flex;flex-wrap:wrap!important;justify-content:flex-start;gap:8px}
+ .task-header-actions>*,.tasks-actions>*{min-width:0;max-width:100%;box-sizing:border-box}
+ .task-header-actions .st-btn{white-space:normal;overflow-wrap:anywhere;height:auto;min-height:36px}
+ .tasks-actions .tasks-search{flex:1 1 140px;width:auto}
+ .task-detail,.task-facts{min-width:0;max-width:100%;box-sizing:border-box}
+}

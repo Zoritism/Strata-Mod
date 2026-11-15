@@ -1,0 +1,11 @@
+{
+  "name": "strata-mod",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "author": "Zoritism",
+  "license": "MIT",
+  "description": "External extension runtime and three general-purpose packages for Strata 0.2.13 on Windows",
+  "scripts": { "test": "node --test tests/*.test.mjs" },
+  "engines": { "node": ">=24.12.0" }
+}

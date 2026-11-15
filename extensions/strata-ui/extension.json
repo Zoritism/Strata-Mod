@@ -1,0 +1,11 @@
+{
+  "id": "strata-ui",
+  "name": "Интерфейс Strata",
+  "version": "0.1.1",
+  "api": 1,
+  "author": "Zoritism",
+  "description": "Показатели компьютера, удалённый доступ, мобильная компоновка и сворачивание файлов в чате.",
+  "capabilities": ["settings", "filesystem", "network"],
+  "backend": "backend.mjs",
+  "ui": "ui.mjs"
+}

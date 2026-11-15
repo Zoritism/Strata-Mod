@@ -1,0 +1,57 @@
+# Local development, installed software and test state
+.work/
+node_modules/
+upstream/
+dist/
+build/
+outputs/
+recovery/
+AGENTS.local.md
+INVENTORY.md
+
+# Native/user profiles, installation receipts and backups
+data/
+user-data/
+extension-data/
+workspaces/
+storage.json
+storage.json.*
+installation.json
+extensions.json
+strata-bridge-receipt.json
+extensions/packages/
+extensions/backups/
+extensions/bin/
+tools/
+
+# Secrets and generated access settings
+.env
+.env.*
+access.txt
+devices.json
+instance.json
+*.pem
+*.key
+*.pfx
+*.p12
+*.cer
+*.crt
+*.dpapi
+
+# Binaries, archives, model weights and logs
+*.exe
+*.dll
+*.pdb
+*.ico
+*.gguf
+*.safetensors
+*.pt
+*.bin
+*.zip
+*.7z
+*.tar
+*.gz
+*.log
+*.sqlite*
+*.db
+*.ldb

@@ -1,0 +1,304 @@
+diff --git a/apps/host/server/store.mjs b/apps/host/server/store.mjs
+--- a/apps/host/server/store.mjs
++++ b/apps/host/server/store.mjs
+@@ -1,3 +1,4 @@
++import { bridge } from './strata-extensions-bridge.mjs';
+ import { migrateSetup } from './setup.mjs';
+ /** Tiny persisted state for the host: one JSON file under STRATA_HOME. */
+ import { accessSync, constants, mkdirSync, readFileSync, writeFileSync, existsSync, realpathSync, readdirSync, statSync, statfsSync, symlinkSync } from 'node:fs';
+@@ -12,6 +13,7 @@ import { defaultModelDirectory } from './model-directory-default.mjs';
+  * folder next to the checkout rather than failing to boot.
+  */
+ function resolveHome() {
++  if (bridge) return bridge.paths.home();
+   const candidates = [process.env.STRATA_HOME, join(homedir(), '.strata'), join(process.cwd(), '.strata')].filter(
+     Boolean,
+   );
+@@ -80,7 +82,7 @@ export function pickModelsDirectory({ saved, home, preferred, fixedByEnv = false
+   return { directory: legacy, notice: `Strata could not use ${preferred} for models (${error.code ?? error.message}), so models go to ${legacy}. You can pick another folder in Settings.` };
+  }
+ }
+-const MODELS_PICK = pickModelsDirectory({ saved: state.modelsDir, home: HOME, preferred: DEFAULT_MODELS_DIRECTORY, fixedByEnv: !!process.env.STRATA_MODELS_DIR });
++const MODELS_PICK = pickModelsDirectory({ saved: bridge ? bridge.paths.models(state.modelsDir, DEFAULT_MODELS_DIRECTORY) : state.modelsDir, home: HOME, preferred: DEFAULT_MODELS_DIRECTORY, fixedByEnv: !!process.env.STRATA_MODELS_DIR });
+ /** Plain words for the person when the usual model folder could not be used (empty otherwise). */
+ export const MODELS_DIR_NOTICE = MODELS_PICK.notice;
+ if (MODELS_DIR_NOTICE) console.warn(`[strata] ${MODELS_DIR_NOTICE}`);
+diff --git a/apps/host/server/index.mjs b/apps/host/server/index.mjs
+--- a/apps/host/server/index.mjs
++++ b/apps/host/server/index.mjs
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env node
+ import { engineProgressMark } from './agent/engine-progress.mjs';
++import { bridge } from './strata-extensions-bridge.mjs';
+ import './system-ca.mjs';        // #3722: the operating system's certificates, before any HTTPS request
+ import { createCloudflare } from './cloudflare.mjs';
+ import { createConnectorInstaller } from './cloudflared-install.mjs';
+@@ -122,7 +123,7 @@ const insideApp = path => { const rel = relative(ROOT, resolve(path)); return re
+ 
+ const hub = new EventHub();
+ /** The chats, as files in the profile's data folder (chat-store.mjs). */
+-const chatStore = createChatStore({ dir: store.DATA_DIR, privateDir: makePrivateDir });
++const chatStore = bridge?.createChatStore ? bridge.createChatStore(createChatStore,{ dir: store.DATA_DIR, privateDir: makePrivateDir }) : createChatStore({ dir: store.DATA_DIR, privateDir: makePrivateDir });
+ const modelProviders = createModelProviders({ directory: store.DATA_DIR, knownThinks: (connection, modelId) => visionProbe.knownThinks(connection, modelId), changed: value => hub.send('providers', withPictureAnswers(value)) });
+ const imageModels = createImageModels({ dataDir: store.DATA_DIR, modelsDir: () => store.MODELS_DIR, real: models.REAL, changed: value => hub.send('image-models', value) });
+ /* The installed app ships Strata Control (python + strata_control) next to the host; a source checkout has none and keeps its older paths. */
+@@ -230,6 +231,7 @@ const requestQueue = new RequestQueue(n => monitor.queueWaiting(n));
+ let runtimeModels;
+ const rawSend = hub.send.bind(hub);
+ hub.send = (event, payload) => {
++  if (bridge) ({ name: event, payload } = bridge.event(event, payload));
+   if (event === 'engine-status') rawSend('engine-status', payload);
+   else if (event === 'engine-log') rawSend('log', payload);
+   else if(event==='models' && runtimeModels){
+@@ -514,11 +516,11 @@ let workspaces = loadWorkspaces();
+ /* The folder each chat works in ("Select a folder"): the agent's working folder and sandbox for that chat. */
+ const chatAttachments = createAttachments();
+ const nativeDrops = createNativeDrops();
+-const uploads = createUploads({ dir: join(store.DATA_DIR, 'uploads'), folderOf: chatId => chatRoot(chatId), attachments: chatAttachments });
++const uploads = (bridge?.createUploads ? options => bridge.createUploads(createUploads,options) : createUploads)({ dir: join(store.DATA_DIR, 'uploads'), folderOf: chatId => chatRoot(chatId), attachments: chatAttachments });
+ try { uploads.sweep(); } catch { /* best effort */ }
+ const chatFolders = createChatFolders({ file: join(store.DATA_DIR, 'chat-folders.json') });
+ /** Where a chat's files are: its chosen folder, else the folder its agent worked in, else the default workspace (chat-files.mjs). One source for every file route. */
+-const chatRoot = chatId => chatRootOf({ chosen: chatFolders.get(chatId), used: agent.workingFolder?.(chatId), fallback: workspaces[0]?.path ?? WORKSPACE });
++const chatRoot = chatId => bridge?.chatWorkspace ? bridge.chatWorkspace(chatId, chatRootOf({ chosen: chatFolders.get(chatId), used: agent.workingFolder?.(chatId), fallback: workspaces[0]?.path ?? WORKSPACE })) : chatRootOf({ chosen: chatFolders.get(chatId), used: agent.workingFolder?.(chatId), fallback: workspaces[0]?.path ?? WORKSPACE });
+ 
+ function saveWorkspaces() {
+   try {
+@@ -579,7 +581,7 @@ function clientName(req) {
+   return 'Local client';
+ }
+ 
+-async function runRemoteTurn({ selection, message, history, images = [], thinking, onFrame, signal, workspaceId }) {
++async function runRemoteTurn({ selection, message, history, images = [], thinking, onFrame, signal, workspaceId, sessionId }) {
+   const controller = new AbortController();
+   const requestSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+   let entry;
+@@ -590,7 +592,7 @@ async function runRemoteTurn({ selection, message, history, images = [], thinkin
+     const appliedSkills = selectSkills(skillState, message, workspaceId);
+     entry = serving.open({ client: 'Strata chat', endpoint: connection.protocol === 'anthropic' ? '/messages' : connection.protocol === 'openai-responses' ? '/responses' : '/chat/completions', model: `${connection.name} · ${model.name}`, cancel: () => controller.abort(new DOMException('Cancelled by the user', 'AbortError')) });
+     serving.mark(entry.id, { state: 'generating' });
+-    const result = await modelProviders.stream({ selection, message, history, images, thinking, signal: requestSignal, systemPrompt: ['You are Strata, a helpful assistant. Answer clearly. Do not claim to have read files or performed actions unless their results are included in the conversation.', skillInstructions(appliedSkills)].filter(Boolean).join('\n\n'), onFrame: frame => {
++    const result = await modelProviders.stream({ selection, message, history, images, thinking, signal: requestSignal, systemPrompt: ['You are Strata, a helpful assistant. Answer clearly. Do not claim to have read files or performed actions unless their results are included in the conversation.', skillInstructions(appliedSkills), bridge?.chatRules(sessionId)].filter(Boolean).join('\n\n'), onFrame: frame => {
+       if (frame.type === 'start') noteSkillUse(appliedSkills);
+       if (frame.type === 'done') serving.mark(entry.id, { tokensIn: frame.tokensIn, tokensOut: frame.tokensOut, usageSource: frame.usageSource });
+       onFrame({ ...frame, requestId: entry.id, model: model.name, contextMax: model.contextMax, remoteModel: true, ...(frame.type === 'start' ? { skills: appliedSkills.map(s => s.name) } : {}) });
+@@ -610,7 +612,8 @@ async function runRemoteTurn({ selection, message, history, images = [], thinkin
+ /** One agent turn for a chat, streamed to the caller as the NDJSON frames the chat already renders. */
+ async function runAgentTurn({ res, controller, chatId, body, message, workspaceId, images = [] }) {
+   const write = frame => { if (!res.writableEnded && !res.destroyed) res.write(`${JSON.stringify(frame)}\n`); };
+-  const cwd = chatFolders.get(chatId) ?? (workspaceId ? workspaces.find(w => w.id === workspaceId)?.path : null) ?? WORKSPACE;
++  const chosen = chatFolders.get(chatId) ?? (workspaceId ? workspaces.find(w => w.id === workspaceId)?.path : null) ?? WORKSPACE;
++  const cwd = bridge?.agentWorkspace ? bridge.agentWorkspace(chatId, chosen) : chosen;
+   let choice, instance = null;
+   if (body.remoteModel) {
+     choice = { connectionId: String(body.remoteModel.connectionId), modelId: String(body.remoteModel.modelId) };
+@@ -642,7 +645,7 @@ async function runAgentTurn({ res, controller, chatId, body, message, workspaceI
+       : compactLine ? await agent.compactCommand(turnOptions)
+       : researchLine ? await agent.researchCommand({ ...turnOptions, line: researchLine[1] ?? '' })
+       : planLine ? await agent.planCommand({ ...turnOptions, line: planLine[1] ?? '' })
+-      : goalLine ? await agent.goalCommand({ ...turnOptions, line: goalLine[1] ?? '' }) : await agent.runTurn(turnOptions);
++      : goalLine ? await agent.goalCommand({ ...turnOptions, line: goalLine[1] ?? '' }) : await (bridge ? bridge.chat(turnOptions, options => agent.runTurn(options), {agent:true}) : agent.runTurn(turnOptions));
+     if (result?.detached) void result.ended.then(r => settle(r?.tokensOut ?? null), () => settle(null));
+     else settle(result?.tokensOut ?? null, result?.error ? 'The agent turn failed.' : undefined);
+   } catch (err) {
+@@ -652,12 +655,13 @@ async function runAgentTurn({ res, controller, chatId, body, message, workspaceI
+   }
+ }
+ 
+-async function runTurn({ message, history = [], onFrame, signal, client, workspaceId = null, sessionId = null, remoteModel = null, runtimeModelId = undefined, nativeModelId, images=[], useTools=false, thinking='medium', thinkingBudget=0 }) {
+-  if (remoteModel) return runRemoteTurn({ selection: remoteModel, message, history, images, thinking, onFrame, signal, workspaceId });
++async function runTurn(options) { return bridge ? bridge.chat(options, runTurnCore, {agent:false}) : runTurnCore(options); }
++async function runTurnCore({ message, history = [], onFrame, signal, client, workspaceId = null, sessionId = null, remoteModel = null, runtimeModelId = undefined, nativeModelId, images=[], useTools=false, thinking='medium', thinkingBudget=0 }) {
++  if (remoteModel) return runRemoteTurn({ selection: remoteModel, message, history, images, thinking, onFrame, signal, workspaceId, sessionId });
+   if(native.hasLive()||nativeModelId){
+     let instance;try{instance=native.resolveInstance(nativeModelId??native.state().defaultId);}catch(e){const message=plainNoModel(e.message);onFrame({type:'error',message});return {error:message};}const started=Date.now(),cancel=new AbortController();
+     const entry=serving.open({client:client??'Strata chat',endpoint:'/chat/completions',model:instance.apiModelId,instanceId:instance.id,gpuIds:instance.gpus.map(String),cancel:()=>cancel.abort()});
+-    try{serving.mark(entry.id,{state:'generating'});const applied=selectSkills(skillState,message,workspaceId);const result=await proxyCompletion({baseUrl:`http://127.0.0.1:${instance.port}/v1`,modelId:instance.apiModelId,authorization:instance.key,message,history,images,extra:{strata_mcp:useTools===true,...(thinkingBudget>0&&String(thinking).toLowerCase()!=='off'?{reasoning_budget_tokens:thinkingBudget}:{}),reasoning_effort:({off:'none',max:'high'}[String(thinking).toLowerCase()]??String(thinking).toLowerCase())},systemPrompt:[SYSTEM_PROMPT,skillInstructions(applied)].filter(Boolean).join('\n\n'),signal:signal?AbortSignal.any([signal,cancel.signal]):cancel.signal,onFrame:frame=>onFrame({...frame,requestId:entry.id,model:instance.label,contextMax:instance.metrics?.engine?.max_context??instance.context,skills:applied.map(s=>s.name)})});serving.mark(entry.id,{...result,usageSource:result.usageSource});serving.finish(entry.id,{tokensOut:result.tokensOut,durationMs:Date.now()-started});return result;}catch(e){serving.finish(entry.id,{durationMs:Date.now()-started,error:e.message});onFrame({type:'error',message:e.message,requestId:entry.id});return {error:e.message};}
++    try{serving.mark(entry.id,{state:'generating'});const applied=selectSkills(skillState,message,workspaceId);const result=await proxyCompletion({baseUrl:`http://127.0.0.1:${instance.port}/v1`,modelId:instance.apiModelId,authorization:instance.key,message,history,images,extra:{strata_mcp:useTools===true,...(thinkingBudget>0&&String(thinking).toLowerCase()!=='off'?{reasoning_budget_tokens:thinkingBudget}:{}),reasoning_effort:({off:'none',max:'high'}[String(thinking).toLowerCase()]??String(thinking).toLowerCase())},systemPrompt:[SYSTEM_PROMPT,skillInstructions(applied),bridge?.chatRules(sessionId)].filter(Boolean).join('\n\n'),signal:signal?AbortSignal.any([signal,cancel.signal]):cancel.signal,onFrame:frame=>onFrame({...frame,requestId:entry.id,model:instance.label,contextMax:instance.metrics?.engine?.max_context??instance.context,skills:applied.map(s=>s.name)})});serving.mark(entry.id,{...result,usageSource:result.usageSource});serving.finish(entry.id,{tokensOut:result.tokensOut,durationMs:Date.now()-started});return result;}catch(e){serving.finish(entry.id,{durationMs:Date.now()-started,error:e.message});onFrame({type:'error',message:e.message,requestId:entry.id});return {error:e.message};}
+   }
+   runtimeState();
+   let instance;
+@@ -687,7 +691,7 @@ async function runTurn({ message, history = [], onFrame, signal, client, workspa
+       // Scope is resolved again at dispatch: a disabled skill never stays active
+       // merely because the request waited in the queue.
+       const appliedSkills = selectSkills(skillState, message, workspaceId);
+-      const systemPrompt = [SYSTEM_PROMPT, skillInstructions(appliedSkills)].filter(Boolean).join('\n\n');
++      const systemPrompt = [SYSTEM_PROMPT, skillInstructions(appliedSkills), bridge?.chatRules(sessionId)].filter(Boolean).join('\n\n');
+       serving.mark(entry.id, { state: 'generating' });
+       const contextMax = instance.memory.context;
+       const modelMonitor=models.REAL?monitor:{
+@@ -945,6 +949,7 @@ const tasks = createTaskService({
+   },
+ });
+ const taskTimer = setInterval(() => tasks.tick(), 15000);
++bridge?.attachChatManagement({workspaces:()=>workspaces,reset:id=>agent.resetSession(id),busy:id=>agent.isRunning(id),folder:(id,folder)=>chatFolders.set(id,folder),changed:(id,rev)=>hub.send('chats',{id,rev})});
+ taskTimer.unref();
+ 
+ // The share and tunnel listeners take a free port (the next ones above the host's own) instead of a fixed PORT+1 / PORT+2 that Docker, WSL or Hyper-V may hold or reserve.
+@@ -965,6 +970,7 @@ const server = http.createServer(async (req, res) => {
+   if (!url) return badRequest(res);   // #4397: a bad Host or request target is a 400, never an unhandled rejection
+   const path = url.pathname;
+   const method = req.method ?? 'GET';
++  if (await bridge?.request(req, res)) return;
+ 
+   res.setHeader('access-control-allow-origin', '*');
+   res.setHeader('access-control-allow-headers', 'content-type, authorization, x-api-key, x-strata-client');
+@@ -2071,7 +2077,7 @@ async function api(req, res, path, method, url) {
+ 
+   // --- chat ---------------------------------------------------------------
+   if ((path === '/api/chat/stream' || path === '/api/plan/start-goal') && method === 'POST') {
+-    const body = await readBody(req,12*1024*1024);
++    const body = await (bridge ? bridge.transform('chat.request', await readBody(req,12*1024*1024), {req,res}) : readBody(req,12*1024*1024));
+     if (path === '/api/plan/start-goal') { body.message = '/plan start'; if (typeof body.planId !== 'string') return error(res, 400, 'planId is required'); }
+     let images;try{const named=Array.isArray(body.imageIds)&&body.imageIds.length?uploads.dataUrls(typeof body.sessionId==='string'?body.sessionId:'',body.imageIds):[];images=validateChatImages([...(Array.isArray(body.images)?body.images:[]),...named]);}catch(e){return error(res,400,e.message);}
+     if(images.length&&body.remoteModel){const own=modelProviders.withSecrets().find(c=>c.id===body.remoteModel.connectionId);const row=own?.models.find(m=>m.id===body.remoteModel.modelId);const refused=await pictureRefusal(own,row);if(refused)return error(res,409,refused);}
+diff --git a/apps/host/server/agent/agent-bridge.mjs b/apps/host/server/agent/agent-bridge.mjs
+--- a/apps/host/server/agent/agent-bridge.mjs
++++ b/apps/host/server/agent/agent-bridge.mjs
+@@ -14,6 +14,7 @@
+  *   - it never implements Stop by killing the Harness (that would cancel every other chat);
+  *   - it never holds a secret outside the environment of the agent process it starts.
+  */
++import { bridge } from '../strata-extensions-bridge.mjs';
+ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+ import { join, resolve } from 'node:path';
+ import { homedir, tmpdir } from 'node:os';
+@@ -221,7 +222,7 @@ export function createAgentBridge({ dataDir, componentsDir = null, bundledDir =
+     writeFileSync(patchFile, profile.patch);
+     const workdir = join(root, 'run');
+     const hp = new HarnessProcess({
+-      harness: h, home, patchFile, cwd: workdir, env: profile.env, nodePath, logFile: join(root, 'harness.log'), pidFile: join(root, 'harness.pid'),
++      harness: h, home, patchFile, cwd: workdir, env: {...profile.env,...bridge?.workerEnvironment()}, nodePath, logFile: join(root, 'harness.log'), pidFile: join(root, 'harness.pid'),
+       onExit: exit => {
+         log(`agent · the Harness process exited (code ${exit.code})`);
+         if (rt?.hp === hp) { lastError = 'The agent process stopped.'; rt = null; }
+@@ -407,6 +408,7 @@ export function createAgentBridge({ dataDir, componentsDir = null, bundledDir =
+     const { rt: runtime, route } = await ensureRuntime(choice, signal);
+     const made = await sessionFor(c, workspacePath, runtime, { onWait: () => reporter.set({ phase: 'starting', code: 'assistant-starting', text: 'Starting the assistant…' }) });
+     const { sessionId, fresh } = made ?? {};
++    bridge?.bindSessionRules(sessionId,chatId);
+     const cancelled = () => { reporter.clear(); emit({ type: 'done', finishReason: 'aborted', cancelled: true, tokensIn: null, tokensOut: null, usageSource: 'unavailable', durationMs: 0, model: route.name, contextMax: route.contextWindow }); return { cancelled: true }; };
+     if (c.cancelStart || !made) return cancelled();
+ 
+@@ -1502,6 +1504,7 @@ export function plainGoalError(e) {
+ 
+ /** The Harness session of a chat that existed before the agent did knows nothing; carry a bounded summary. */
+ export function withEarlierConversation(history, message) {
++  if (bridge?.earlierConversation) return bridge.earlierConversation(history, message);
+   const rows = history.filter(m => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim()).slice(-12);
+   if (!rows.length) return message;
+   const text = rows.map(m => `${m.role}: ${m.content.length > 1500 ? `${m.content.slice(0, 1499)}…` : m.content}`).join('\n');
+diff --git a/apps/host/server/agent/plugins/strata-context.mjs b/apps/host/server/agent/plugins/strata-context.mjs
+--- a/apps/host/server/agent/plugins/strata-context.mjs
++++ b/apps/host/server/agent/plugins/strata-context.mjs
+@@ -16,6 +16,7 @@
+  * request the Harness marks `purpose: 'compaction'` is touched in `llm.stream`. Nothing in the Harness is rewritten: a Harness update
+  * that renames either leaves compaction as it was, and the test that runs the real Harness fails.
+  */
++import { rulesBridge } from '../../strata-rules-bridge.mjs';
+ import { replyCap } from '../reply-cut.mjs';
+ import { densityOf, estimateMessage, estimateTools, isContextOverflow, MAX_DENSITY, pressureNow, promptTokensOf, splitMessages, summaryBudget, usageOfEvent, WINDOW_SLACK, withSummaryLanguage } from '../context-budget.mjs';
+ 
+@@ -35,6 +36,7 @@ const careful = new Map();
+ export function apply(ctx) {
+   const meter = ctx.tokenMeter;
+   const llm = ctx.llm;
++  rulesBridge?.attachRules(llm);
+   const log = (level, text) => { try { ctx.logger?.[level]?.(`strata-context: ${text}`); } catch { /* logging never blocks */ } };
+ 
+   // 1. The measured size of the prompt, from the model server's own report for each answer.
+diff --git a/apps/host/index.html b/apps/host/index.html
+--- a/apps/host/index.html
++++ b/apps/host/index.html
+@@ -26,9 +26,11 @@
+     <link rel="icon" href="/favicon-dark-48.png" type="image/png" sizes="48x48" media="(prefers-color-scheme: dark)" />
+     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+     <link rel="manifest" href="/site.webmanifest" />
++    <!-- strata-extensions-bridge API 1 -->
++    <script type="module" src="/extensions/core/ui.mjs"></script>
+   </head>
+   <body>
+     <div id="root"></div>
+-    <script type="module" src="/src/main.tsx"></script>
++    <script type="module" src="/extensions/core/boot.mjs" data-strata-app="/src/main.tsx"></script>
+   </body>
+ </html>
+diff --git a/apps/host/src/lib/store.ts b/apps/host/src/lib/store.ts
+--- a/apps/host/src/lib/store.ts
++++ b/apps/host/src/lib/store.ts
+@@ -692,6 +692,7 @@ export async function answerAgentAsk(sessionId: string, callId: string, answers:
+ }
+ 
+ /** Puts a turn or a selected passage above the message box. */
++(globalThis as any).strataExtensionsChatAdapter={get:()=>state,rev:(id:string)=>sessionWriter.rev(id),flush:flushSessions,send:sendMessage,adopt:(s:Session,rev:number)=>{sessionWriter.adopt(s,rev);set({sessions:state.sessions.map(row=>row.id===s.id?s:row)});},transient:(s:Session)=>set({sessions:state.sessions.map(row=>row.id===s.id?s:row)})};
+ export function addQuote(sessionId: string, text: string, messageId: string, role: 'user' | 'assistant') {
+   const list = state.quotes[sessionId] ?? [];
+   const next = addToQuotes(list, { text, messageId, role });
+@@ -1697,6 +1698,7 @@ export function stopStreaming() {
+  * stream handling that already lives here.
+  */
+ export async function retryLast(messageId?: string) {
++  if ((globalThis as any).strataExtensionsChat) return (globalThis as any).strataExtensionsChat.retry(messageId);
+   const source = state.sessions.find(s => s.id === state.activeSession);
+   if (!source || state.streaming) return;
+   const end = messageId ? source.messages.findIndex(m => m.id === messageId) : source.messages.length - 1;
+@@ -1778,6 +1780,7 @@ export function branchFrom(messageId: string): string | null {
+   const branch: Session = {
+     ...source,
+     id: uid('s'),
++    ...(globalThis as any).strataExtensionsBranch?.(source.id), // strata-extensions-bridge: provenance only
+     title: `${source.title} (branch)`,
+     defaultTitle: false,
+     createdAt: now,
+@@ -1819,6 +1822,7 @@ export async function continueLast() {
+  * different prompt. Returns the text so the composer can be filled with it.
+  */
+ export function rewindTo(messageId: string): string | null {
++  if ((globalThis as any).strataExtensionsChat) return (globalThis as any).strataExtensionsChat.edit(messageId);
+   if (state.streaming) return null;
+   const source = state.sessions.find(s => s.id === state.activeSession);
+   const at = source?.messages.findIndex(m => m.id === messageId) ?? -1;
+@@ -1973,7 +1977,8 @@ export async function sendMessage(text: string, options: { fromLoop?: boolean; g
+   }
+   const pictureCheck=pictureStatus(nativeState(),state.remoteModel,state.providers);
+   if(!reattach&&pendingChatPhotos(state.activeSession).length&&!pictureCheck.ok){pushToast('error','This model cannot read pictures',tr(pictureCheck.message));return;}
+-  const pictures=reattach?[]:takeChatPhotos(state.activeSession);
++  if (!reattach && await (globalThis as any).strataExtensionsChat?.beforeSend({text,options}) === false) return;
++  const pictures=reattach?[]:((globalThis as any).strataExtensionsChat?.photos(takeChatPhotos(state.activeSession)) ?? takeChatPhotos(state.activeSession));
+   const body=text.trim()||(pictures.length?'Describe this picture.':'');
+   if(!body&&!resume&&!planStart&&!reattach)return;
+ 
+@@ -1981,6 +1986,7 @@ export async function sendMessage(text: string, options: { fromLoop?: boolean; g
+   if (!sessionId) sessionId = newSession().id;
+ 
+   const userMsg: ChatMessage = { id: uid('m'), role: 'user', content: options.shown ?? body, at: new Date().toISOString(),...(pictures.length?{photos:pictures}:{}),...(options.markdown?{markdown:true}:{}) };
++  Object.assign(userMsg,(globalThis as any).strataExtensionsChat?.user(userMsg)??userMsg);
+   // A taken-over turn goes on in the reply the page already has (the last one, if it is the assistant's).
+   const lastReply = reattach ? [...(state.sessions.find(s => s.id === sessionId)?.messages ?? [])].reverse()[0] : undefined;
+   const resumedReply = lastReply?.role === 'assistant' ? lastReply : undefined;
+diff --git a/apps/host/src/lib/chat-sync.ts b/apps/host/src/lib/chat-sync.ts
+--- a/apps/host/src/lib/chat-sync.ts
++++ b/apps/host/src/lib/chat-sync.ts
+@@ -130,7 +130,7 @@ export async function hydrateChats(opts: {
+     const hostIds = new Set(list.chats.map(c => c.id));
+     const onlyHere = opts.current.filter(s => !hostIds.has(s.id));
+     const sessions = [...onlyHere, ...merged];
+-    const recovered = takeLastMomentCopy(browser, sessions, revs);
++    const recovered = (await import('/extensions/core/chat-recovery.mjs')).excludeDeleted(takeLastMomentCopy(browser, sessions, revs), Reflect.get(list, 'deleted'));
+     return { sessions: recovered.sessions, revs, offline: false, moved, failed, recovered: recovered.ids };
+   } catch (e) {
+     if (isTransportError(e)) return { sessions: opts.current, revs: new Map(), offline: true, moved, failed, recovered: [] };
+diff --git a/apps/host/server/strata-rules-bridge.mjs b/apps/host/server/strata-rules-bridge.mjs
+new file mode 100644
+--- /dev/null
++++ b/apps/host/server/strata-rules-bridge.mjs
+@@ -0,0 +1,2 @@
++// strata-extensions-bridge: lightweight worker adapter, no host initialization.
++export const rulesBridge=process.env.STRATA_EXTENSIONS_ENTRY?await import(new URL('./harness-rules.mjs',process.env.STRATA_EXTENSIONS_ENTRY)):null;
+diff --git a/apps/host/server/strata-extensions-bridge.mjs b/apps/host/server/strata-extensions-bridge.mjs
+new file mode 100644
+--- /dev/null
++++ b/apps/host/server/strata-extensions-bridge.mjs
+@@ -0,0 +1,2 @@
++// strata-extensions-bridge ABI 1: implementation stays outside upstream.
++export const bridge = process.env.STRATA_EXTENSIONS_ENTRY ? await import(process.env.STRATA_EXTENSIONS_ENTRY) : null;

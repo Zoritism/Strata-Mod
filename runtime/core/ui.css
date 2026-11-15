@@ -1,0 +1,37 @@
+/* Shared package manager controls and the per-chat rules surface. Domain-specific
+   presentation belongs to the package that owns the corresponding feature. */
+.sx-settings-active .settings-pane > [role=tabpanel]:not(.sx-panel) { display:none!important; }
+.sx-panel[hidden] { display:none!important; }
+.sx-panel { padding-bottom:32px; color:var(--st-ink); }
+.sx-card { padding:18px; border:1px solid var(--st-line,#8884); border-radius:12px; background:var(--st-surface); display:grid; gap:12px; }
+.sx-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.sx-row > strong { flex:1; }
+.sx-row[role=tablist] > button[aria-selected=true] { border-color:var(--st-accent); background:var(--st-surface); color:var(--st-ink); font-weight:600; box-shadow:inset 0 -2px var(--st-accent); }
+.sx-panel input[type=text], .sx-panel select { background:var(--st-surface-2); color:var(--st-ink); border:1px solid var(--st-line,#8885); border-radius:7px; padding:8px 10px; font:inherit; min-width:0; }
+.sx-row > input[type=text] { flex:1; min-width:160px; }
+.sx-panel label { display:block; }
+.sx-panel input[type=checkbox] { margin-right:6px; }
+.sx-button { padding:7px 12px; border-radius:7px; cursor:pointer; border:1px solid var(--st-line,#8885); background:var(--st-surface-2); color:var(--st-ink); font:inherit; }
+.sx-button:disabled { opacity:.5; cursor:default; }
+.sx-button:focus-visible,.sx-panel input:focus-visible,.sx-panel select:focus-visible { outline:2px solid var(--st-accent); outline-offset:2px; }
+.sx-muted { opacity:.72; font-size:12px; line-height:1.5; }
+.sx-path { overflow-wrap:anywhere; }
+.sx-notice { padding:12px; border:1px solid var(--st-line,#8885); border-radius:8px; background:var(--st-surface-2); white-space:pre-wrap; }
+.sx-chat-rules-button { flex:none; white-space:nowrap; }
+.sx-chat-rules-dialog { width:min(680px,calc(100vw - 32px)); max-height:min(80vh,760px); padding:0; border:1px solid var(--st-line,#8885); border-radius:14px; background:var(--st-surface); color:var(--st-ink); box-shadow:0 24px 80px #0006; }
+.sx-chat-rules-dialog::backdrop { background:#0008; }
+.sx-chat-rules-content { display:grid; gap:14px; padding:24px; }
+.sx-chat-rules-content h2,.sx-chat-rules-content p { margin:0; }
+.sx-chat-rules-content p { color:var(--st-ink-muted); line-height:1.5; font-size:13px; }
+.sx-chat-rules-content textarea { width:100%; min-height:220px; resize:vertical; box-sizing:border-box; padding:12px; border:1px solid var(--st-line,#8885); border-radius:8px; background:var(--st-surface-2); color:var(--st-ink); font:inherit; line-height:1.5; }
+.sx-chat-rules-actions { justify-content:flex-end; }
+.sx-chat-rules-status { min-height:1em; }
+.sx-panel h3 { font-size:15px; font-weight:600; margin:0; }
+.sx-field { display:grid; gap:7px; padding:14px 0; border-bottom:1px solid var(--st-line,#8883); }
+.sx-preview { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
+.sx-card[hidden],.sx-panel [hidden] { display:none!important; }
+.sx-glyph { display:inline-grid; place-items:center; width:1.2em; font-size:1.2em; }
+.sx-panel textarea { width:100%; min-height:110px; box-sizing:border-box; resize:vertical; padding:10px; border:1px solid var(--st-line,#8885); border-radius:7px; background:var(--st-surface-2); color:var(--st-ink); font:inherit; }
+.sx-editing-message { display:flex; align-items:center; gap:8px; font-size:12px; padding:8px; color:var(--st-muted); }
+.sx-drop-target { outline:2px solid var(--st-accent); outline-offset:-2px; }
+.sx-operation-error { position:fixed; bottom:24px; left:24px; max-width:min(520px,90vw); z-index:2147483647; }

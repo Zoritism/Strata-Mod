@@ -1,0 +1,4 @@
+# Preserve exact bytes for bridge hash receipts and immutable package inventories.
+* -text
+# Unified diff context lines legitimately contain a single space.
+*.patch -whitespace

@@ -1,0 +1,15 @@
+{
+  "id": "chat-rules",
+  "name": "Правила чата",
+  "version": "0.4.1",
+  "api": 1,
+  "author": "Zoritism",
+  "description": "Редактор постоянных пользовательских инструкций, сохраняемых и применяемых отдельно для каждого диалога.",
+  "capabilities": [
+    "chat",
+    "settings",
+    "filesystem"
+  ],
+  "backend": "backend.mjs",
+  "ui": "ui.mjs"
+}

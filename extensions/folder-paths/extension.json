@@ -1,0 +1,15 @@
+{
+  "id": "folder-paths",
+  "name": "Папки и пути",
+  "version": "0.3.3",
+  "api": 1,
+  "author": "Zoritism",
+  "description": "Единое размещение данных Strata, включая нативную папку моделей, строгий режим и проверяемый перенос.",
+  "capabilities": [
+    "settings",
+    "storage",
+    "filesystem"
+  ],
+  "backend": "backend.mjs",
+  "ui": "ui.mjs"
+}
