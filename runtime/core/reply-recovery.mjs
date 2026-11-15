@@ -9,7 +9,8 @@ export function replyRoom(context) {
   return context.window - context.tokens - reserve - 1024;
 }
 
-const failed = () => ({ok: false, message: 'Ответ оборвался. Не удалось освободить достаточно контекста для продолжения; повтор с почти нулевым лимитом остановлен. История сохранена. Сократите контекст командой /compact и повторите запрос.'});
+const failed = message => ({ok: false, message: 'Ответ оборвался. ' + message + ' История сохранена.'});
+const noRoom = () => failed('После сокращения осталось слишком мало места для продолжения.');
 
 /** One recovery transaction, called only while the native agent is idle.
  * A short cutoff can be caused by a server clamp invisible to the estimator;
@@ -28,14 +29,27 @@ export async function prepareReplyRetry({cut, context, compact, stopped = () => 
     report('Освобождаю контекст перед продолжением ответа…');
     const result = await compact();
     if (stopped()) return cancelled();
-    if (!result?.ok) return failed();
-    const after = result.after ?? await context();
+    const after = result?.after ?? await context();
     if (stopped()) return cancelled();
-    const remaining = replyRoom(after);
-    if (remaining === null || remaining < 0 || (before && !(after.tokens < before.tokens))) return failed();
-    return {ok: true, compacted: true, before, after};
+    const roomAfter = replyRoom(after);
+    if (roomAfter === null) return failed('Не удалось измерить свободное место в контексте. Автоматическое продолжение остановлено.');
+    const shrank = result?.ok && (!before || after.tokens < before.tokens);
+    if (shrank) {
+      // The normal reservation controls when to compact. A recovery can fit
+      // with less if it gains a meaningful budget over the truncated reply.
+      const needed = Math.max(4096, Math.min(8192, (cut?.tokens || 0) + 1024));
+      if (after.window - after.tokens >= needed + 1024) return {ok: true, compacted: true, before, after};
+    }
+    // A short reply can hit a provider's output cap in a small conversation.
+    // The host bounds attempts with measured room and stops tiny cutoffs.
+    if (cut?.tokens >= 1024 && room !== null && room >= 0 && roomAfter >= 0) {
+      return {ok: true, compacted: false};
+    }
+    if (roomAfter >= 0) return failed('В контексте есть место, но ответ достиг лимита вывода. Автоматическое продолжение остановлено. Попросите закончить оставшуюся часть отдельно.');
+    if (result?.ok) return noRoom();
+    return failed('Штатное сокращение не освободило место. Для продолжения начните новый чат и перенесите нужные детали задачи.');
   } catch {
-    return stopped() ? cancelled() : failed();
+    return stopped() ? cancelled() : failed('Проверка контекста не завершилась. Автоматическое продолжение остановлено.');
   }
 }
 

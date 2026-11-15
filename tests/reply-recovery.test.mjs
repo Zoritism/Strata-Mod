@@ -39,6 +39,25 @@ test('stop during compaction prevents the queued continuation',async()=>{
   assert.deepEqual(result,{ok:false,cancelled:true});
 });
 
+test('a compacted context can fit a continuation below the ordinary output reservation',async()=>{
+  const result=await prepareReplyRetry({cut:{tokens:5385},context:async()=>({tokens:58385,window:65536}),
+    compact:async()=>({ok:true,after:{tokens:50503,window:65536}})});
+  assert.equal(result.ok,true);
+});
+
+test('a provider output cutoff can continue when history is already short',async()=>{
+  const result=await prepareReplyRetry({cut:{tokens:4096},context:async()=>({tokens:8000,window:65536}),
+    compact:async()=>({ok:false,reason:'nothing'})});
+  assert.deepEqual(result,{ok:true,compacted:false});
+});
+
+test('a one-token cutoff on a short history does not trigger a blind retry',async()=>{
+  const result=await prepareReplyRetry({cut:{tokens:1},context:async()=>({tokens:8000,window:65536}),
+    compact:async()=>({ok:false,reason:'nothing'})});
+  assert.equal(result.ok,false);
+  assert.match(result.message,/лимита вывода/);
+});
+
 test('failed context RPCs preserve data and do not start blind retries',async()=>{
   const result=await prepareReplyRetry({context:async()=>{throw Error('offline');},compact:()=>assert.fail()});
   assert.equal(result.ok,false);
