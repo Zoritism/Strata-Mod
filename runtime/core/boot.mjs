@@ -30,9 +30,12 @@ try {
   }
   // 0.2.11 owns chats in the host file store. Do not keep rewriting its legacy
   // browser import source after recovery has been applied.
-  // Fetch bridged native code for this deployment, not the old file cached
-  // under upstream's unchanged asset name. Relative chunk imports stay native.
-  await import(app+'?sx-build='+encodeURIComponent(state.bootVersion??'legacy'));
+  // Refresh the canonical entry URL before import. Native chunks import this URL,
+  // so a query suffix would instantiate a second application store.
+  const entry = await fetch(app, { cache: 'reload' });
+  if (!entry.ok) throw Error('Не удалось обновить интерфейс Strata.');
+  await entry.arrayBuffer();
+  await import(app);
 } catch (e) {
   const panel = document.createElement('div'); panel.setAttribute('role', 'alert'); panel.style.cssText = 'padding:32px;max-width:800px;margin:auto;white-space:pre-wrap';
   panel.textContent = 'Strata Extensions: история оставлена для проверки.\n' + e.message; document.body.append(panel); console.error(e);
