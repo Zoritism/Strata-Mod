@@ -2,6 +2,7 @@ import {deviceStore} from './lan-auth.mjs';
 import {formatRules} from './harness-rules.mjs';
 import {attachWindowIcon} from './window-icon.mjs';
 export {earlierConversation} from './chat-context.mjs';
+export {prepareReplyRetry, replyCutNudge, replyCutNotice} from './reply-recovery.mjs';
 import {workspaceUploads} from './workspace-uploads.mjs';
 import {workspaceChats} from './workspace-chats.mjs';
 import {chatManagement} from './chat-management.mjs';

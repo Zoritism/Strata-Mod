@@ -110,6 +110,14 @@ const indexFile=path.join(host,'server','index.mjs');
 }
 
 for(const [relative,from,to] of [
+ ['server/agent/agent-bridge.mjs','            const cut = projector.cut();',`            const cut = projector.cut();
+            turn.cutWaiting = true;
+            const recovery = await bridge?.prepareReplyRetry?.({cut, context: () => contextOf(runtime, sessionId), compact: () => compactChat(runtime, sessionId), stopped: () => turn.finished || turn.stopping || signal?.aborted, report: text => reporter.set({phase:'waiting', code:'reply-recovery', text})});
+            if (turn.finished || turn.stopping || signal?.aborted) { turn.cutWaiting = false; armSettle(); return; }
+            if (recovery?.ok === false) { turn.cutWaiting = false; turn.replyRecoveryError = recovery.message; finishTurn(null); return; }`],
+ ['server/agent/agent-bridge.mjs','const note = cutNotice({ ...cut, retrying: true });','const note = bridge?.replyCutNotice?.({ ...cut, retrying: true }) ?? cutNotice({ ...cut, retrying: true });'],
+ ['server/agent/agent-bridge.mjs','const note = cutNotice({ ...projector.cut(), retrying: false });','const note = bridge?.replyCutNotice?.({ ...projector.cut(), retrying: false, recoveryError: turn.replyRecoveryError }) ?? cutNotice({ ...projector.cut(), retrying: false });'],
+ ['server/agent/agent-bridge.mjs','text: cutNudge(cut)','text: (bridge?.replyCutNudge?.(cut) ?? cutNudge(cut))'],
  ['server/agent/agent-bridge.mjs','export function withEarlierConversation(history, message) {','export function withEarlierConversation(history, message) {\n  if (bridge?.earlierConversation) return bridge.earlierConversation(history, message);'],
  ['server/agent/agent-bridge.mjs','env: profile.env, nodePath, logFile:', 'env: {...profile.env,...bridge?.workerEnvironment()}, nodePath, logFile:'],
  ['server/agent/agent-bridge.mjs','    const { sessionId, fresh } = made ?? {};','    const { sessionId, fresh } = made ?? {};\n    bridge?.bindSessionRules(sessionId,chatId);'],

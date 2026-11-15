@@ -180,7 +180,39 @@ diff --git a/apps/host/server/agent/agent-bridge.mjs b/apps/host/server/agent/ag
      const cancelled = () => { reporter.clear(); emit({ type: 'done', finishReason: 'aborted', cancelled: true, tokensIn: null, tokensOut: null, usageSource: 'unavailable', durationMs: 0, model: route.name, contextMax: route.contextWindow }); return { cancelled: true }; };
      if (c.cancelStart || !made) return cancelled();
  
-@@ -1502,6 +1504,7 @@ export function plainGoalError(e) {
+@@ -528,7 +530,7 @@ export function createAgentBridge({ dataDir, componentsDir = null, bundledDir =
+       // A reply the length limit cut ends with a sentence that says so (and what was lost), never with silence (AGENT-LOST).
+       const cutEnd = !failure && !turn.stopping && projector.ended?.kind === 'max-tokens';
+       if (cutEnd && !noteReason) {
+-        const note = cutNotice({ ...projector.cut(), retrying: false });
++        const note = bridge?.replyCutNotice?.({ ...projector.cut(), retrying: false, recoveryError: turn.replyRecoveryError }) ?? cutNotice({ ...projector.cut(), retrying: false });
+         extra.push({ type: 'delta', own: true, text: `
+ 
+ ${note.text}`, key: note.key, values: note.values, noteReason: 'cut' });
+@@ -808,8 +810,12 @@ ${note.text}`, key: note.key, values: note.values, noteReason: 'cut' });
+           if (turn.cutWaiting) { turn.settleTimer = after(300, armSettle); return; }
+           if (projector.ended?.kind === 'max-tokens' && !turn.goalRun && !turn.stopping && (turn.cuts ?? 0) < MAX_CUT_RETRIES) {
+             const cut = projector.cut();
++            turn.cutWaiting = true;
++            const recovery = await bridge?.prepareReplyRetry?.({cut, context: () => contextOf(runtime, sessionId), compact: () => compactChat(runtime, sessionId), stopped: () => turn.finished || turn.stopping || signal?.aborted, report: text => reporter.set({phase:'waiting', code:'reply-recovery', text})});
++            if (turn.finished || turn.stopping || signal?.aborted) { turn.cutWaiting = false; armSettle(); return; }
++            if (recovery?.ok === false) { turn.cutWaiting = false; turn.replyRecoveryError = recovery.message; finishTurn(null); return; }
+             turn.cuts = (turn.cuts ?? 0) + 1;
+-            const note = cutNotice({ ...cut, retrying: true });
++            const note = bridge?.replyCutNotice?.({ ...cut, retrying: true }) ?? cutNotice({ ...cut, retrying: true });
+             emit({ type: 'delta', own: true, text: `
+ 
+ ${note.text}
+@@ -817,7 +823,7 @@ ${note.text}
+ `, key: note.key, values: note.values, noteReason: 'cut' });
+             for (const f of projector.clearCut()) emit(f);
+             turn.cutWaiting = true;
+-            try { await runtime.gw.rpc('session/prompt', { request: { requestId: `cut-${randomUUID()}`, sessionId, mode: 'queue', content: [{ type: 'text', text: cutNudge(cut) }] } }); }
++            try { await runtime.gw.rpc('session/prompt', { request: { requestId: `cut-${randomUUID()}`, sessionId, mode: 'queue', content: [{ type: 'text', text: (bridge?.replyCutNudge?.(cut) ?? cutNudge(cut)) }] } }); }
+             catch { turn.cutWaiting = false; finishTurn(null); return; }
+             turn.settleTimer = after(500, armSettle);
+             return;
+@@ -1502,6 +1508,7 @@ export function plainGoalError(e) {
  
  /** The Harness session of a chat that existed before the agent did knows nothing; carry a bounded summary. */
  export function withEarlierConversation(history, message) {
