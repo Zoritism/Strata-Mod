@@ -1,4 +1,4 @@
-# Run on demand from the local desktop. UAC is needed only for this scoped rule.
+﻿# Run on demand from the local desktop. UAC is needed only for this scoped rule.
 param([ValidateSet('Enable','Disable')][string]$Action='Enable',[switch]$ValidateOnly)
 $ErrorActionPreference='Stop'
 # Validate the selected installation before asking Windows for elevation.

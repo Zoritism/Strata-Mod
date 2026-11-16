@@ -1,4 +1,4 @@
-# Installed beside control.ps1. Uses existing executables; never kills components.
+﻿# Installed beside control.ps1. Uses existing executables; never kills components.
 param([switch]$ValidateOnly)
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))

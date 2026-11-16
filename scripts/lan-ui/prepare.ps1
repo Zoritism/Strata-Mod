@@ -1,4 +1,4 @@
-# Generate a dedicated CA for one LAN server. The CA key is never exported.
+﻿# Generate a dedicated CA for one LAN server. The CA key is never exported.
 param(
     [Parameter(Mandatory)][string]$Directory,
     [Parameter(Mandatory)][string]$Address,

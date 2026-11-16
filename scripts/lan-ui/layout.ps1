@@ -1,4 +1,4 @@
-# Read code-layout metadata only; no credentials or user profile are required.
+﻿# Read code-layout metadata only; no credentials or user profile are required.
 # Legacy receipts use app/, while a public overlay runs the native flat tree.
 function Resolve-StrataApplicationDirectory([string]$Root) {
     $appDir='app'
