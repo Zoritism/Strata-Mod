@@ -1,3 +1,4 @@
+import {chatDataExclusions as dataExclusions} from './chat-stream.mjs';
 import {deviceStore} from './lan-auth.mjs';
 import {formatRules} from './harness-rules.mjs';
 import {attachWindowIcon} from './window-icon.mjs';
@@ -91,6 +92,7 @@ const core = {
 };
 export function chatRules(chat){return chat?formatRules(commands.get('chat-rules.read')?.(chat)):'';}
 export function workerEnvironment(){return {STRATA_EXTENSIONS_CONFIG:file,STRATA_EXTENSIONS_ENTRY:process.env.STRATA_EXTENSIONS_ENTRY};}
+export function chatDataExclusions(chat,workspace){return chat?dataExclusions(chatLocations.file(chat),workspace,path):[];}
 export function bindSessionRules(session,chat){
   if(!session||!chat)return;
   const file=path.join(activePaths.home,'data','session-rules.json'),map=readJSON(file,{});
@@ -212,7 +214,7 @@ function sameOrigin(req) {
 }
 function asset(req, res, url) {
   let root, name;
-  if (url.pathname.startsWith('/extensions/core/')) { root = coreDir; name = url.pathname.slice('/extensions/core/'.length); if (!['ui.mjs', 'ui.css', 'boot.mjs', 'history-merge.mjs', 'surfaces.mjs','chat-management-ui.mjs','chat-recovery.mjs'].includes(name)) return json(res, 404, { error: 'Not found' }); }
+  if (url.pathname.startsWith('/extensions/core/')) { root = coreDir; name = url.pathname.slice('/extensions/core/'.length); if (!['ui.mjs', 'ui.css', 'boot.mjs', 'history-merge.mjs', 'surfaces.mjs','chat-management-ui.mjs','chat-recovery.mjs','chat-stream.mjs'].includes(name)) return json(res, 404, { error: 'Not found' }); }
   else {
     const [, , id, ...parts] = url.pathname.split('/'); const record = active.find(r => r.id === id);
     if (!record) return json(res, 404, { error: 'Not found' });

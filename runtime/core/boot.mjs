@@ -1,3 +1,5 @@
+import {installChatStreamRecovery} from './chat-stream.mjs';
+installChatStreamRecovery();
 import { historyKey, mergeRecovered } from './history-merge.mjs';
 // The native branch operation supplies identity only; inheritance belongs to ChatStore.
 globalThis.strataExtensionsBranch=source=>({sxBranchSource:source});

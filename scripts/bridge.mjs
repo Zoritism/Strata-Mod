@@ -109,12 +109,18 @@ const indexFile=path.join(host,'server','index.mjs');
   if(staged)staged[1]=text;
 }
 
-for(const [relative,from,to] of [
- ['server/agent/agent-bridge.mjs','            const cut = projector.cut();',`            const cut = projector.cut();
+// A disconnected HTTP reader does not cancel the native turn. Keep the old
+// seam as an upgrade anchor; only explicit Stop cancels context recovery.
+const replyRecoverySeam=`            const cut = projector.cut();
             turn.cutWaiting = true;
             const recovery = await bridge?.prepareReplyRetry?.({cut, context: () => contextOf(runtime, sessionId), compact: () => compactChat(runtime, sessionId), stopped: () => turn.finished || turn.stopping || signal?.aborted, report: text => reporter.set({phase:'waiting', code:'reply-recovery', text})});
             if (turn.finished || turn.stopping || signal?.aborted) { turn.cutWaiting = false; armSettle(); return; }
-            if (recovery?.ok === false) { turn.cutWaiting = false; turn.replyRecoveryError = recovery.message; finishTurn(null); return; }`],
+            if (recovery?.ok === false) { turn.cutWaiting = false; turn.replyRecoveryError = recovery.message; finishTurn(null); return; }`;
+for(const [relative,from,to,legacy] of [
+ ['server/agent/agent-bridge.mjs','  function trackerFolders() {','  function trackerFolders(chatId, workspacePath) {'],
+ ['server/agent/agent-bridge.mjs','    return { forbid, exclude };','    return { forbid, exclude: [...exclude, ...(bridge?.chatDataExclusions?.(chatId, workspacePath) ?? [])] };'],
+ ['server/agent/agent-bridge.mjs','...trackerFolders(), claims: folderClaims','...trackerFolders(chatId, workspacePath), claims: folderClaims'],
+ ['server/agent/agent-bridge.mjs','            const cut = projector.cut();',replyRecoverySeam.replaceAll(' || signal?.aborted',''),replyRecoverySeam],
  ['server/agent/agent-bridge.mjs','const note = cutNotice({ ...cut, retrying: true });','const note = bridge?.replyCutNotice?.({ ...cut, retrying: true }) ?? cutNotice({ ...cut, retrying: true });'],
  ['server/agent/agent-bridge.mjs','const note = cutNotice({ ...projector.cut(), retrying: false });','const note = bridge?.replyCutNotice?.({ ...projector.cut(), retrying: false, recoveryError: turn.replyRecoveryError }) ?? cutNotice({ ...projector.cut(), retrying: false });'],
  ['server/agent/agent-bridge.mjs','text: cutNudge(cut)','text: (bridge?.replyCutNudge?.(cut) ?? cutNudge(cut))'],
@@ -131,8 +137,9 @@ for(const [relative,from,to] of [
   if(receipt?receipt.after!==digest(old):old.includes('strata-rules-bridge'))throw Error('Changed bridge '+relative);
  }
  if(old.includes(to))continue;
- if(old.split(from).length!==2)throw Error('Rules bridge anchor mismatch: '+relative);
- const text=old.replace(from,to),record=records.find(r=>r.file===relative);
+ const anchor=legacy&&old.includes(legacy)?legacy:from;
+ if(old.split(anchor).length!==2)throw Error('Rules bridge anchor mismatch: '+relative);
+ const text=old.replace(anchor,to),record=records.find(r=>r.file===relative);
  if(record)record.after=digest(text);else records.push({file:relative,before:digest(old),after:digest(text)});
  if(staged)staged[1]=text;else writes.push([file,text]);
 }

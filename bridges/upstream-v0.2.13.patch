@@ -163,6 +163,21 @@ diff --git a/apps/host/server/agent/agent-bridge.mjs b/apps/host/server/agent/ag
  import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
  import { join, resolve } from 'node:path';
  import { homedir, tmpdir } from 'node:os';
+@@ -134,12 +135,12 @@ export function createAgentBridge({ dataDir, componentsDir = null, bundledDir =
+    * Where the turn's file tracker must never look (deliverables.mjs): the app, the engine and its components, Strata's own data, AppData
+    * and temp. `forbid` ones also switch tracking off when the chat's folder is one of them or inside one.
+    */
+-  function trackerFolders() {
++  function trackerFolders(chatId, workspacePath) {
+     const user = env.USERPROFILE ?? env.HOME ?? homedir();
+     const forbid = [HOST_DIR, componentsDir, bundledDir].filter(Boolean);
+     const exclude = [dataDir, tmpdir(), env.LOCALAPPDATA, env.APPDATA, env.ProgramData, env.ProgramFiles, env['ProgramFiles(x86)'], env.TEMP, env.TMP,
+       join(user, 'AppData'), join(user, '.cache'), join(user, '.config'), join(user, '.local'), join(user, 'Library')].filter(Boolean);
+-    return { forbid, exclude };
++    return { forbid, exclude: [...exclude, ...(bridge?.chatDataExclusions?.(chatId, workspacePath) ?? [])] };
+   }
+ 
+   /** chatId -> { sessionId, cwd, createdAt } */
 @@ -221,7 +222,7 @@ export function createAgentBridge({ dataDir, componentsDir = null, bundledDir =
      writeFileSync(patchFile, profile.patch);
      const workdir = join(root, 'run');
@@ -172,6 +187,15 @@ diff --git a/apps/host/server/agent/agent-bridge.mjs b/apps/host/server/agent/ag
        onExit: exit => {
          log(`agent · the Harness process exited (code ${exit.code})`);
          if (rt?.hp === hp) { lastError = 'The agent process stopped.'; rt = null; }
+@@ -376,7 +377,7 @@ export function createAgentBridge({ dataDir, componentsDir = null, bundledDir =
+     let guard = null;
+     const raw = frame => { if (frame.type === 'done' || frame.type === 'error') terminal = frame; try { send(frame); } catch { send = () => {}; attached = false; } };
+     // What the turn made (files) and compact activity lines (notes-split-agent8.md): derived from the cards the turn already sends.
+-    const tracker = new DeliverableTracker(workspacePath, { ...trackerFolders(), claims: folderClaims, owner: chatId });
++    const tracker = new DeliverableTracker(workspacePath, { ...trackerFolders(chatId, workspacePath), claims: folderClaims, owner: chatId });
+     let toolsRan = false;   // a turn that ran no tool wrote nothing, so there is nothing to look for at its end
+     try { tracker.snapshot(); } catch { /* a folder that cannot be read has no deliverables */ }
+     const groups = new ActivityGroups({ emit: raw });
 @@ -407,6 +408,7 @@ export function createAgentBridge({ dataDir, componentsDir = null, bundledDir =
      const { rt: runtime, route } = await ensureRuntime(choice, signal);
      const made = await sessionFor(c, workspacePath, runtime, { onWait: () => reporter.set({ phase: 'starting', code: 'assistant-starting', text: 'Starting the assistant…' }) });
@@ -194,8 +218,8 @@ diff --git a/apps/host/server/agent/agent-bridge.mjs b/apps/host/server/agent/ag
            if (projector.ended?.kind === 'max-tokens' && !turn.goalRun && !turn.stopping && (turn.cuts ?? 0) < MAX_CUT_RETRIES) {
              const cut = projector.cut();
 +            turn.cutWaiting = true;
-+            const recovery = await bridge?.prepareReplyRetry?.({cut, context: () => contextOf(runtime, sessionId), compact: () => compactChat(runtime, sessionId), stopped: () => turn.finished || turn.stopping || signal?.aborted, report: text => reporter.set({phase:'waiting', code:'reply-recovery', text})});
-+            if (turn.finished || turn.stopping || signal?.aborted) { turn.cutWaiting = false; armSettle(); return; }
++            const recovery = await bridge?.prepareReplyRetry?.({cut, context: () => contextOf(runtime, sessionId), compact: () => compactChat(runtime, sessionId), stopped: () => turn.finished || turn.stopping, report: text => reporter.set({phase:'waiting', code:'reply-recovery', text})});
++            if (turn.finished || turn.stopping) { turn.cutWaiting = false; armSettle(); return; }
 +            if (recovery?.ok === false) { turn.cutWaiting = false; turn.replyRecoveryError = recovery.message; finishTurn(null); return; }
              turn.cuts = (turn.cuts ?? 0) + 1;
 -            const note = cutNotice({ ...cut, retrying: true });
